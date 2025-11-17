@@ -1,0 +1,5 @@
+gymnasium==1.2.2
+pygame==2.6.1
+pandas>=2.0.0
+numpy>=2.3.0
+tqdm>=4.66.0
