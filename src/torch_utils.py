@@ -23,4 +23,4 @@ def init_weights(module):
     """
     if isinstance(module, torch.nn.Linear):
         torch.nn.init.xavier_uniform(module.weight)
-        m.bias.data.fill_(0.01)
+        module.bias.data.fill_(0.01)

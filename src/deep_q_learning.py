@@ -49,7 +49,8 @@ class DQN(nn.Module):
 
     def __init__(self, n_observations: int, n_actions: int):
         super(DQN, self).__init__()
-        # Simpler architecture is suggested for classic control tasks
+        self._initialize_weights()
+        # Simpler architecture is suggested for classic control tasks]
         self.model = nn.Sequential(
             nn.Linear(n_observations, 128),
             nn.ReLU(),
@@ -59,7 +60,7 @@ class DQN(nn.Module):
         )
 
     def _initialize_weights(self):
-        for m in self.modules():
+        for module in self.modules():
             init_weights(module)
 
     def forward(self, x):
@@ -83,45 +84,36 @@ def soft_update(target_net: DQN, policy_net: DQN, tau: float = 0.005):
 def optimize_model(
     optimizer,
     criterion,
+    device,
     gamma: float,
-    train_sample: list[torch.Tensor()],
+    train_sample: list[torch.Tensor],
     policy_net: DQN,
     target_net: DQN,
     verbose: bool = False,
 ) -> None:
-    """
-    Optimize policy network
-    """
     optimizer.zero_grad()
 
-    done_mask = torch.tensor([float(x.done) for x in train_sample])
+    done_mask = torch.stack([x.done for x in train_sample]).squeeze()
     next_state_tensor = torch.stack([x.next_state for x in train_sample])
     state_tensor = torch.stack([x.state for x in train_sample])
     action_batch = torch.stack([x.action for x in train_sample])
     reward_batch = torch.stack([x.reward for x in train_sample]).squeeze()
 
-    # Actual q values
-    current_q_tensor = policy_net(state_tensor)
-    next_state_action_tensor = current_q_tensor.gather(1, action_batch.view(1, -1)).to(
-        torch.float32
-    )
+    # Current Q values for taken actions
+    current_q_values = policy_net(state_tensor).gather(1, action_batch.unsqueeze(1))
 
-    # Expected q values
+    # Next Q values from target network
     with torch.no_grad():
-        exp_q_tensor = target_net(next_state_tensor)
-        next_state_expected_tensor = (
-            gamma * (1 - done_mask) * exp_q_tensor.gather(1, action_batch.view(1, -1))
-            + reward_batch
-        ).to(torch.float32)
+        next_q_values = target_net(next_state_tensor).max(1)[0]
+        expected_q_values = reward_batch + gamma * next_q_values * (1 - done_mask)
 
-    loss = criterion(next_state_action_tensor, next_state_expected_tensor)
+    loss = criterion(current_q_values.squeeze(), expected_q_values)
 
     if verbose:
-        print(f"Loss function value: {loss}")
+        print(f"Loss function value: {loss.item()}")
 
-    # Optimize the model
     loss.backward()
-    torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
+    torch.nn.utils.clip_grad_norm_(policy_net.parameters(), max_norm=1.0)
     optimizer.step()
 
 
@@ -138,7 +130,7 @@ def select_action(
     """
     if exploratory_period or torch.rand(1) < epsilon:
         # random action
-        return torch.randint(0, n_actions, (1,), device=device).max()
+        return torch.randint(0, n_actions, (1,)).max().to(device)
 
     with torch.no_grad():
         # best action
