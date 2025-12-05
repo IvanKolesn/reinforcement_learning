@@ -1,0 +1,139 @@
+"""
+Advantage Actor Critic algorithm
+"""
+
+import numpy as np
+import torch
+from torch import nn
+from torch.nn import functional as F
+from torch import distributions as td
+
+
+def compute_cumulative_rewards(rewards: np.array, gamma: float) -> np.array:
+    """
+    r_t + \gamma V^{\theta}(s_{t+1})
+    """
+    cum_rewards = np.zeros_like(rewards)
+    reward_len = len(rewards)
+    for j in reversed(range(reward_len)):
+        cum_rewards[j] = rewards[j] + (
+            cum_rewards[j + 1] * gamma if j + 1 < reward_len else 0
+        )
+    return cum_rewards
+
+
+def transform_state_to_tensor(state: np.array):
+    state = torch.tensor(state, dtype=torch.float32)
+    state = state.permute(0, 3, 1, 2)
+    return state
+
+
+class ActorNet(nn.Module):
+    """
+    Predicts next action for the car
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.model = nn.Sequential(
+            # Image processing part
+            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Flatten(),
+            # Decision part
+            nn.LazyLinear(512),
+            nn.ReLU(),
+            nn.Linear(in_features=512, out_features=64),
+            nn.ReLU(),
+            nn.Flatten(start_dim=0),
+            nn.ReLU(),
+            # we use gaussian policy and predict means and stds of actions
+            nn.LazyLinear(6),
+        )
+
+    def forward(self, state):
+        # Get means and log_stds
+        out = self.model(state)
+        means, log_stds = out.chunk(2, dim=-1)
+        log_stds = torch.clamp(log_stds, -20, 2)
+        return means, log_stds
+
+    def get_action_and_log_prob(self, state):
+        means, log_stds = self.forward(state)
+        stds = torch.exp(log_stds)
+
+        # Create Normal distribution
+        base_dist = td.Normal(means, stds)
+
+        # Sample from base distribution
+        epsilon = torch.randn_like(means)  # Reparameterization trick
+        raw_actions = means + stds * epsilon
+
+        # Apply different transforms to each action dimension
+        transformed_actions = torch.zeros_like(raw_actions)
+
+        # Action 1 (Steering): tanh transform (range [-1, 1])
+        transformed_actions[0] = torch.tanh(raw_actions[0])
+
+        # Action 2 (Acceleration): sigmoid transform (range [0, 1])
+        transformed_actions[1] = torch.sigmoid(raw_actions[1])
+
+        # Action 3 (Breaking): sigmoid transform (range [0, 1])
+        transformed_actions[2] = torch.sigmoid(raw_actions[2])
+
+        # Compute log probability with Jacobian correction
+        log_prob = base_dist.log_prob(raw_actions).sum(dim=-1, keepdim=True)
+
+        # Add Jacobian correction for each transform
+        # tanh correction: log(1 - tanh^2(x))
+        tanh_correction = torch.log(1 - transformed_actions[0].pow(2) + 1e-6)
+
+        # sigmoid correction: -log(sigmoid(x)) - log(1 - sigmoid(x))
+        # Actually: sigmoid(x) = 1/(1+exp(-x)), derivative = sigmoid(x)*(1-sigmoid(x))
+        # So correction = -log(sigmoid(x)) - log(1-sigmoid(x))
+        sigmoid_correction1 = -torch.log(transformed_actions[1] + 1e-6) - torch.log(
+            1 - transformed_actions[1] + 1e-6
+        )
+        sigmoid_correction2 = -torch.log(transformed_actions[2] + 1e-6) - torch.log(
+            1 - transformed_actions[2] + 1e-6
+        )
+
+        # Subtract Jacobian corrections (log|det(J)|)
+        log_prob = log_prob.sum() - (
+            tanh_correction + sigmoid_correction1 + sigmoid_correction2
+        )
+
+        return transformed_actions, log_prob
+
+
+class ValueNet(nn.Module):
+    """
+    Predicts next action's value
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.model = nn.Sequential(
+            # Image processing part
+            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Flatten(),
+            # Decision part
+            nn.LazyLinear(512),
+            nn.ReLU(),
+            nn.Linear(in_features=512, out_features=64),
+            nn.ReLU(),
+            nn.Flatten(start_dim=0),
+            nn.ReLU(),
+            nn.LazyLinear(1),
+            nn.GELU(),  # Value can be super positive, but only -0.1 if negative
+        )
+
+    def forward(self, state):
+        return self.model(state)

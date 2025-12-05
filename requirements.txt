@@ -1,4 +1,6 @@
 gymnasium==1.2.2
+stable_baselines3==2.7.0
+torch==2.7.0
 pygame==2.6.1
 swig==4.4.0
 Box2D==2.3.10
