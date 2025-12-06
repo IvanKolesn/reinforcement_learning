@@ -40,23 +40,23 @@ class ActorNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv_model = nn.Sequential(
-            # Image processing part
-            nn.LazyConv2d(out_channels=16, kernel_size=3),
+            nn.Conv2d(12, 32, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2),
             nn.ReLU(),
+            nn.Conv2d(128, 256, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
         )
         self.linear_model = nn.Sequential(
-            nn.LazyLinear(out_features=512),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(in_features=512, out_features=256),
+            nn.Linear(256, 128),
             nn.ReLU(),
-            # we use gaussian policy and predict means and stds of actions
-            # hence (mean + std) * 3
-            nn.Linear(256, 6),
+            nn.Linear(128, 6),  # 3 means + 3 log_stds
         )
 
     def forward(self, state: torch.Tensor):
@@ -148,24 +148,23 @@ class ValueNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv_model = nn.Sequential(
-            # Image processing part
-            nn.LazyConv2d(out_channels=16, kernel_size=3),
+            nn.Conv2d(12, 32, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2),
             nn.ReLU(),
+            nn.Conv2d(128, 256, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
         )
         self.linear_model = nn.Sequential(
-            nn.LazyLinear(out_features=512),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(in_features=512, out_features=64),
+            nn.Linear(256, 128),
             nn.ReLU(),
-            # we use gaussian policy and predict means and stds of actions
-            # hence (mean + std) * 3
-            nn.Linear(64, 1),
-            nn.GELU(),
+            nn.Linear(128, 1),
         )
 
     def forward(self, state: torch.Tensor):
