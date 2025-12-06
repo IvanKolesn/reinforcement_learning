@@ -17,17 +17,14 @@ def compute_returns(
     device,
 ) -> torch.Tensor:
     returns = []
-    next_value = 0
 
     for t in reversed(range(len(rewards))):
         # If terminated, next value is 0
         if terminated[t] or t == len(rewards) - 1:
             returns_t = rewards[t]
-            next_value = 0
         else:
-            returns_t = rewards[t] + gamma * next_value
+            returns_t = rewards[t] + gamma * values[t]
         returns.insert(0, returns_t)
-        next_value = returns_t
 
     return torch.stack(returns).to(device)
 
@@ -49,14 +46,14 @@ class ActorNet(nn.Module):
             nn.Conv2d(128, 256, kernel_size=3, stride=2),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d(1),
-            nn.Flatten()
+            nn.Flatten(),
         )
         self.linear_model = nn.Sequential(
             nn.Linear(256, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(128, 6)  # 3 means + 3 log_stds
+            nn.Linear(128, 6),  # 3 means + 3 log_stds
         )
 
     def forward(self, state: torch.Tensor):
@@ -121,21 +118,21 @@ class ActorNet(nn.Module):
 
         # Add Jacobian correction for each transform
         # tanh correction: log(1 - tanh^2(x))
-        tanh_correction = torch.log(1 - transformed_actions[:, 0].pow(2) + 1e-6)
+        # tanh_correction = torch.log(1 - transformed_actions[:, 0].pow(2) + 1e-6)
 
         # sigmoid correction: -log(sigmoid(x)) - log(1 - sigmoid(x))
         # Actually: sigmoid(x) = 1/(1+exp(-x)), derivative = sigmoid(x)*(1-sigmoid(x))
         # So correction = -log(sigmoid(x)) - log(1-sigmoid(x))
-        sigmoid_correction1 = -torch.log(transformed_actions[:, 1] + 1e-6) - torch.log(
-            1 - transformed_actions[:, 1] + 1e-6
-        )
-        sigmoid_correction2 = -torch.log(transformed_actions[:, 2] + 1e-6) - torch.log(
-            1 - transformed_actions[:, 2] + 1e-6
-        )
+        # sigmoid_correction1 = -torch.log(transformed_actions[:, 1] + 1e-6) - torch.log(
+        #     1 - transformed_actions[:, 1] + 1e-6
+        # )
+        # sigmoid_correction2 = -torch.log(transformed_actions[:, 2] + 1e-6) - torch.log(
+        #     1 - transformed_actions[:, 2] + 1e-6
+        # )
         # Subtract Jacobian corrections (log|det(J)|)
-        log_prob = log_prob - (
-            tanh_correction + sigmoid_correction1 + sigmoid_correction2
-        )
+        # log_prob = log_prob - (
+        #     tanh_correction + sigmoid_correction1 + sigmoid_correction2
+        # )
 
         return log_prob
 
@@ -157,14 +154,14 @@ class ValueNet(nn.Module):
             nn.Conv2d(128, 256, kernel_size=3, stride=2),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d(1),
-            nn.Flatten()
+            nn.Flatten(),
         )
         self.linear_model = nn.Sequential(
             nn.Linear(256, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(128, 1)
+            nn.Linear(128, 1),
         )
 
     def forward(self, state: torch.Tensor):
