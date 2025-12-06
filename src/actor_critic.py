@@ -22,12 +22,6 @@ def compute_cumulative_rewards(rewards: np.array, gamma: float) -> np.array:
     return cum_rewards
 
 
-def transform_state_to_tensor(state: np.array):
-    state = torch.tensor(state, dtype=torch.float32)
-    state = state.permute(0, 3, 1, 2)
-    return state
-
-
 class ActorNet(nn.Module):
     """
     Predicts next action for the car
@@ -35,74 +29,78 @@ class ActorNet(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.model = nn.Sequential(
+        self.conv_model = nn.Sequential(
             # Image processing part
-            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+            nn.LazyConv2d(out_channels=16, kernel_size=3),
             nn.ReLU(),
             nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
+            nn.ReLU(),
             nn.Flatten(),
-            # Decision part
-            nn.LazyLinear(512),
+        )
+        self.linear_model = nn.Sequential(
+            nn.LazyLinear(out_features=512),
             nn.ReLU(),
             nn.Linear(in_features=512, out_features=64),
             nn.ReLU(),
-            nn.Flatten(start_dim=0),
-            nn.ReLU(),
             # we use gaussian policy and predict means and stds of actions
-            nn.LazyLinear(6),
+            # hence (mean + std) * 3
+            nn.Linear(64, 6),
         )
 
-    def forward(self, state):
-        # Get means and log_stds
-        out = self.model(state)
+    def forward(self, state: torch.Tensor):
+        """
+        Get model prediction
+        """
+        batch_size, frames, channels, height, width = state.size()
+        state = state.reshape(batch_size, frames * channels, height, width)
+        features = self.conv_model(state)
+        out = self.linear_model(features)
         means, log_stds = out.chunk(2, dim=-1)
         log_stds = torch.clamp(log_stds, -20, 2)
         return means, log_stds
 
     def get_action_and_log_prob(self, state):
+        """
+        Transform prediction into actions using gaussian policy
+        """
         means, log_stds = self.forward(state)
         stds = torch.exp(log_stds)
-
-        # Create Normal distribution
+        # action sample from normal distribution
         base_dist = td.Normal(means, stds)
-
-        # Sample from base distribution
-        epsilon = torch.randn_like(means)  # Reparameterization trick
-        raw_actions = means + stds * epsilon
+        raw_actions = base_dist.sample()
 
         # Apply different transforms to each action dimension
         transformed_actions = torch.zeros_like(raw_actions)
 
         # Action 1 (Steering): tanh transform (range [-1, 1])
-        transformed_actions[0] = torch.tanh(raw_actions[0])
+        transformed_actions[:, 0] = torch.tanh(raw_actions[:, 0])
 
         # Action 2 (Acceleration): sigmoid transform (range [0, 1])
-        transformed_actions[1] = torch.sigmoid(raw_actions[1])
+        transformed_actions[:, 1] = torch.sigmoid(raw_actions[:, 1])
 
         # Action 3 (Breaking): sigmoid transform (range [0, 1])
-        transformed_actions[2] = torch.sigmoid(raw_actions[2])
+        transformed_actions[:, 2] = torch.sigmoid(raw_actions[:, 2])
 
         # Compute log probability with Jacobian correction
-        log_prob = base_dist.log_prob(raw_actions).sum(dim=-1, keepdim=True)
+        log_prob = base_dist.log_prob(raw_actions).sum(dim=-1)
 
         # Add Jacobian correction for each transform
         # tanh correction: log(1 - tanh^2(x))
-        tanh_correction = torch.log(1 - transformed_actions[0].pow(2) + 1e-6)
+        tanh_correction = torch.log(1 - transformed_actions[:, 0].pow(2) + 1e-6)
 
         # sigmoid correction: -log(sigmoid(x)) - log(1 - sigmoid(x))
         # Actually: sigmoid(x) = 1/(1+exp(-x)), derivative = sigmoid(x)*(1-sigmoid(x))
         # So correction = -log(sigmoid(x)) - log(1-sigmoid(x))
-        sigmoid_correction1 = -torch.log(transformed_actions[1] + 1e-6) - torch.log(
-            1 - transformed_actions[1] + 1e-6
+        sigmoid_correction1 = -torch.log(transformed_actions[:, 1] + 1e-6) - torch.log(
+            1 - transformed_actions[:, 1] + 1e-6
         )
-        sigmoid_correction2 = -torch.log(transformed_actions[2] + 1e-6) - torch.log(
-            1 - transformed_actions[2] + 1e-6
+        sigmoid_correction2 = -torch.log(transformed_actions[:, 2] + 1e-6) - torch.log(
+            1 - transformed_actions[:, 2] + 1e-6
         )
-
         # Subtract Jacobian corrections (log|det(J)|)
-        log_prob = log_prob.sum() - (
+        log_prob = log_prob - (
             tanh_correction + sigmoid_correction1 + sigmoid_correction2
         )
 
@@ -116,24 +114,33 @@ class ValueNet(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.model = nn.Sequential(
+        self.conv_model = nn.Sequential(
             # Image processing part
-            nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+            nn.LazyConv2d(out_channels=16, kernel_size=3),
             nn.ReLU(),
             nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
+            nn.ReLU(),
             nn.Flatten(),
-            # Decision part
-            nn.LazyLinear(512),
+        )
+        self.linear_model = nn.Sequential(
+            nn.LazyLinear(out_features=512),
             nn.ReLU(),
             nn.Linear(in_features=512, out_features=64),
             nn.ReLU(),
-            nn.Flatten(start_dim=0),
-            nn.ReLU(),
-            nn.LazyLinear(1),
-            nn.GELU(),  # Value can be super positive, but only -0.1 if negative
+            # we use gaussian policy and predict means and stds of actions
+            # hence (mean + std) * 3
+            nn.Linear(64, 1),
+            nn.GELU(),
         )
 
-    def forward(self, state):
-        return self.model(state)
+    def forward(self, state: torch.Tensor):
+        """
+        Get model prediction
+        """
+        batch_size, frames, channels, height, width = state.size()
+        state = state.reshape(batch_size, frames * channels, height, width)
+        features = self.conv_model(state)
+        out = self.linear_model(features)
+        return out
