@@ -13,23 +13,21 @@ def compute_returns(
     rewards: torch.Tensor,
     values: torch.Tensor,
     gamma: float,
+    terminated: torch.Tensor,
     device,
 ) -> torch.Tensor:
-    """
-    Calculate returns with bootstrapping
-    R_t = r_t + gamma * V(s_{t+1})
-    """
     returns = []
-    next_value = 0  # For terminal state
+    next_value = 0
 
-    # Work backwards through the episode
     for t in reversed(range(len(rewards))):
-        # If next state is terminal, next_value = 0
-        if t == len(rewards) - 1:
+        # If terminated, next value is 0
+        if terminated[t] or t == len(rewards) - 1:
             returns_t = rewards[t]
+            next_value = 0
         else:
-            returns_t = rewards[t] + gamma * values[t + 1]
+            returns_t = rewards[t] + gamma * next_value
         returns.insert(0, returns_t)
+        next_value = returns_t
 
     return torch.stack(returns).to(device)
 
