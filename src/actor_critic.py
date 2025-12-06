@@ -9,17 +9,26 @@ from torch.nn import functional as F
 from torch import distributions as td
 
 
-def compute_cumulative_rewards(rewards: np.array, gamma: float) -> np.array:
+def compute_returns(
+    rewards: np.array,
+    values: torch.Tensor,
+    gamma: float,
+    device,
+) -> torch.Tensor:
     """
+    Calculate returns and advantages
     r_t + \gamma V^{\theta}(s_{t+1})
     """
-    cum_rewards = np.zeros_like(rewards)
-    reward_len = len(rewards)
-    for j in reversed(range(reward_len)):
-        cum_rewards[j] = rewards[j] + (
-            cum_rewards[j + 1] * gamma if j + 1 < reward_len else 0
-        )
-    return cum_rewards
+
+    returns = []
+    next_value = 0  # V(s_{t+1}) for last state is 0
+
+    for r, v in zip(reversed(rewards), reversed(values)):
+        # Monte Carlo return
+        returns.insert(0, r + gamma * next_value if returns else r)
+        next_value = returns[0]
+
+    return torch.tensor(returns, device=device)
 
 
 class ActorNet(nn.Module):

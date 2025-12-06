@@ -38,6 +38,4 @@ def transform_state_to_tensor(state: np.array, device):
     # N frames, C channels, H px Height, W px Width
     state = state.permute(0, 3, 1, 2)
     state = state.unsqueeze(0)  # add batch layer
-    batch_size, frames, channels, height, width = state.size()
-    state = state.reshape(batch_size, frames * channels, height, width)
     return state
