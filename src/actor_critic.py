@@ -118,21 +118,21 @@ class ActorNet(nn.Module):
 
         # Add Jacobian correction for each transform
         # tanh correction: log(1 - tanh^2(x))
-        # tanh_correction = torch.log(1 - transformed_actions[:, 0].pow(2) + 1e-6)
+        tanh_correction = torch.log(1 - transformed_actions[:, 0].pow(2) + 1e-6)
 
         # sigmoid correction: -log(sigmoid(x)) - log(1 - sigmoid(x))
         # Actually: sigmoid(x) = 1/(1+exp(-x)), derivative = sigmoid(x)*(1-sigmoid(x))
         # So correction = -log(sigmoid(x)) - log(1-sigmoid(x))
-        # sigmoid_correction1 = -torch.log(transformed_actions[:, 1] + 1e-6) - torch.log(
-        #     1 - transformed_actions[:, 1] + 1e-6
-        # )
-        # sigmoid_correction2 = -torch.log(transformed_actions[:, 2] + 1e-6) - torch.log(
-        #     1 - transformed_actions[:, 2] + 1e-6
-        # )
+        sigmoid_correction1 = -torch.log(transformed_actions[:, 1] + 1e-6) - torch.log(
+            1 - transformed_actions[:, 1] + 1e-6
+        )
+        sigmoid_correction2 = -torch.log(transformed_actions[:, 2] + 1e-6) - torch.log(
+            1 - transformed_actions[:, 2] + 1e-6
+        )
         # Subtract Jacobian corrections (log|det(J)|)
-        # log_prob = log_prob - (
-        #     tanh_correction + sigmoid_correction1 + sigmoid_correction2
-        # )
+        log_prob = log_prob - (
+            tanh_correction + sigmoid_correction1 + sigmoid_correction2
+        )
 
         return log_prob
 
