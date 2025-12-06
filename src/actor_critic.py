@@ -23,7 +23,7 @@ def compute_returns(
         if terminated[t] or t == len(rewards) - 1:
             returns_t = rewards[t]
         else:
-            returns_t = rewards[t] + gamma * values[t]
+            returns_t = rewards[t] + gamma * values[t + 1]
         returns.insert(0, returns_t)
 
     return torch.stack(returns).to(device)
