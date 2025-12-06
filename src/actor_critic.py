@@ -73,7 +73,7 @@ class ActorNet(nn.Module):
         log_stds = torch.clamp(log_stds, -5, 2)
         return means, log_stds
 
-    def get_action_and_log_prob(self, state):
+    def get_actions(self, state):
         """
         Transform prediction into actions using gaussian policy
         """
@@ -82,6 +82,29 @@ class ActorNet(nn.Module):
         # action sample from normal distribution
         base_dist = td.Normal(means, stds)
         raw_actions = base_dist.sample()
+
+        # Apply different transforms to each action dimension
+        transformed_actions = torch.zeros_like(raw_actions)
+
+        # Action 1 (Steering): tanh transform (range [-1, 1])
+        transformed_actions[:, 0] = torch.tanh(raw_actions[:, 0])
+
+        # Action 2 (Acceleration): sigmoid transform (range [0, 1])
+        transformed_actions[:, 1] = torch.sigmoid(raw_actions[:, 1])
+
+        # Action 3 (Breaking): sigmoid transform (range [0, 1])
+        transformed_actions[:, 2] = torch.sigmoid(raw_actions[:, 2])
+
+        return raw_actions, transformed_actions
+
+    def get_log_prob_given_actions(self, state, raw_actions):
+        """
+        Transform prediction into actions using gaussian policy
+        """
+        means, log_stds = self.forward(state)
+        stds = torch.exp(log_stds)
+        # action sample from normal distribution
+        base_dist = td.Normal(means, stds)
 
         # Apply different transforms to each action dimension
         transformed_actions = torch.zeros_like(raw_actions)
@@ -116,7 +139,7 @@ class ActorNet(nn.Module):
             tanh_correction + sigmoid_correction1 + sigmoid_correction2
         )
 
-        return transformed_actions, log_prob
+        return log_prob
 
 
 class ValueNet(nn.Module):
