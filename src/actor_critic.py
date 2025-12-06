@@ -10,25 +10,28 @@ from torch import distributions as td
 
 
 def compute_returns(
-    rewards: np.array,
+    rewards: torch.Tensor,
     values: torch.Tensor,
     gamma: float,
     device,
 ) -> torch.Tensor:
     """
-    Calculate returns and advantages
-    r_t + \gamma V^{\theta}(s_{t+1})
+    Calculate returns with bootstrapping
+    R_t = r_t + gamma * V(s_{t+1})
     """
-
     returns = []
-    next_value = 0  # V(s_{t+1}) for last state is 0
+    next_value = 0  # For terminal state
 
-    for r, v in zip(reversed(rewards), reversed(values)):
-        # Monte Carlo return
-        returns.insert(0, r + gamma * next_value if returns else r)
-        next_value = returns[0]
+    # Work backwards through the episode
+    for t in reversed(range(len(rewards))):
+        # If next state is terminal, next_value = 0
+        if t == len(rewards) - 1:
+            returns_t = rewards[t]
+        else:
+            returns_t = rewards[t] + gamma * values[t + 1]
+        returns.insert(0, returns_t)
 
-    return torch.tensor(returns, device=device)
+    return torch.stack(returns).to(device)
 
 
 class ActorNet(nn.Module):
@@ -51,11 +54,11 @@ class ActorNet(nn.Module):
         self.linear_model = nn.Sequential(
             nn.LazyLinear(out_features=512),
             nn.ReLU(),
-            nn.Linear(in_features=512, out_features=64),
+            nn.Linear(in_features=512, out_features=256),
             nn.ReLU(),
             # we use gaussian policy and predict means and stds of actions
             # hence (mean + std) * 3
-            nn.Linear(64, 6),
+            nn.Linear(256, 6),
         )
 
     def forward(self, state: torch.Tensor):
@@ -67,7 +70,7 @@ class ActorNet(nn.Module):
         features = self.conv_model(state)
         out = self.linear_model(features)
         means, log_stds = out.chunk(2, dim=-1)
-        log_stds = torch.clamp(log_stds, -20, 2)
+        log_stds = torch.clamp(log_stds, -5, 2)
         return means, log_stds
 
     def get_action_and_log_prob(self, state):

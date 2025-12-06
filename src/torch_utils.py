@@ -30,6 +30,15 @@ def init_weights(module):
         module.bias.data.fill_(0.01)
 
 
+def preprocess_state(state):
+    """
+    normalize
+    """
+    # Normalize to [0, 1]
+    state = state / 255.0
+    return state
+
+
 def transform_state_to_tensor(state: np.array, device):
     """
     Multiframe Atari state to torch tensor
