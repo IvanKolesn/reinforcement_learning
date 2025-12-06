@@ -49,14 +49,14 @@ class ActorNet(nn.Module):
             nn.Conv2d(128, 256, kernel_size=3, stride=2),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
+            nn.Flatten()
         )
         self.linear_model = nn.Sequential(
             nn.Linear(256, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(128, 6),  # 3 means + 3 log_stds
+            nn.Linear(128, 6)  # 3 means + 3 log_stds
         )
 
     def forward(self, state: torch.Tensor):
@@ -157,14 +157,14 @@ class ValueNet(nn.Module):
             nn.Conv2d(128, 256, kernel_size=3, stride=2),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
+            nn.Flatten()
         )
         self.linear_model = nn.Sequential(
             nn.Linear(256, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(128, 1),
+            nn.Linear(128, 1)
         )
 
     def forward(self, state: torch.Tensor):
