@@ -20,10 +20,10 @@ def compute_returns(
 
     for t in reversed(range(len(rewards))):
         # If terminated, next value is 0
-        if terminated[t] or t == len(rewards) - 1:
+        if t == len(rewards) - 1:
             returns_t = rewards[t]
         else:
-            returns_t = rewards[t] + gamma * values[t + 1]
+            returns_t = rewards[t] + terminated[t] * gamma * values[t + 1]
         returns.insert(0, returns_t)
 
     return torch.stack(returns).to(device)
@@ -41,19 +41,16 @@ class ActorNet(nn.Module):
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2),
+            nn.Conv2d(64, 64, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.Conv2d(128, 256, kernel_size=3, stride=2),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
         )
         self.linear_model = nn.Sequential(
-            nn.Linear(256, 256),
+            nn.LazyLinear(128),
             nn.ReLU(),
-            nn.Linear(256, 128),
+            nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Linear(128, 6),  # 3 means + 3 log_stds
+            nn.Linear(64, 6),  # 3 means + 3 log_stds
         )
 
     def forward(self, state: torch.Tensor):
@@ -149,19 +146,16 @@ class ValueNet(nn.Module):
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2),
+            nn.Conv2d(64, 64, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.Conv2d(128, 256, kernel_size=3, stride=2),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1),
             nn.Flatten(),
         )
         self.linear_model = nn.Sequential(
-            nn.Linear(256, 256),
+            nn.LazyLinear(128),
             nn.ReLU(),
-            nn.Linear(256, 128),
+            nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Linear(128, 1),
+            nn.Linear(64, 1),
         )
 
     def forward(self, state: torch.Tensor):

@@ -39,6 +39,17 @@ def preprocess_state(state):
     return state
 
 
+def transform_vector_state_to_tensor(state: np.array, device):
+    """
+    Multiframe Atari state to torch tensor
+    """
+    state = torch.tensor(state, dtype=torch.float32, device=device)
+    num_envs = state.shape[0]
+    state = state.permute(0, 1, 4, 2, 3)
+    state_tensor = state.reshape(num_envs, -1, state.shape[-2], state.shape[-1])
+    return state
+
+
 def transform_state_to_tensor(state: np.array, device):
     """
     Multiframe Atari state to torch tensor
